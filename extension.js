@@ -324,6 +324,10 @@ export default class OSKAutoOpenExtension extends Extension {
      * Show the on-screen keyboard by enabling accessibility and triggering cursor location
      */
     _showKeyboard() {
+        if (this._settings && this._settings.get_boolean('debug-mode')) {
+            console.log('[OSK Auto Open] _showKeyboard() called');
+        }
+
         // First enable the accessibility setting if not already enabled
         if (!this._a11ySettings.get_boolean(A11Y_KEYBOARD_KEY)) {
             this._a11ySettings.set_boolean(A11Y_KEYBOARD_KEY, true);
@@ -338,8 +342,16 @@ export default class OSKAutoOpenExtension extends Extension {
         if (Main.inputMethod && Main.inputMethod.currentFocus) {
             const focus = Main.inputMethod.currentFocus;
 
+            if (this._settings && this._settings.get_boolean('debug-mode')) {
+                console.log(`[OSK Auto Open] Focus object: ${focus}, has is_focused: ${typeof focus.is_focused}`);
+            }
+
             GLib.timeout_add(GLib.PRIORITY_HIGH, 50, () => {
                 try {
+                    if (this._settings && this._settings.get_boolean('debug-mode')) {
+                        console.log(`[OSK Auto Open] Timeout callback - focus: ${focus}, is_focused: ${focus ? focus.is_focused() : 'null'}`);
+                    }
+
                     if (focus && focus.is_focused && focus.is_focused()) {
                         // Try to get cursor position if available
                         let x = 0, y = 0, w = 1, h = 1;
@@ -364,6 +376,14 @@ export default class OSKAutoOpenExtension extends Extension {
                             if (this._settings && this._settings.get_boolean('debug-mode')) {
                                 console.log(`[OSK Auto Open] Cursor location signaled: x=${x}, y=${y}, w=${w}, h=${h}`);
                             }
+                        } else {
+                            if (this._settings && this._settings.get_boolean('debug-mode')) {
+                                console.log('[OSK Auto Open] setCursorLocation not available');
+                            }
+                        }
+                    } else {
+                        if (this._settings && this._settings.get_boolean('debug-mode')) {
+                            console.log('[OSK Auto Open] Focus check failed in timeout');
                         }
                     }
                 } catch (error) {
@@ -373,6 +393,10 @@ export default class OSKAutoOpenExtension extends Extension {
                 }
                 return GLib.SOURCE_REMOVE;
             });
+        } else {
+            if (this._settings && this._settings.get_boolean('debug-mode')) {
+                console.log('[OSK Auto Open] No inputMethod or currentFocus available');
+            }
         }
     }
 
