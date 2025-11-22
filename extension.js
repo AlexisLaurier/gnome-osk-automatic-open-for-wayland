@@ -57,6 +57,9 @@ export default class OSKAutoOpenExtension extends Extension {
 
         // Direct text actor detection
         this._textActorConnection = null;
+
+        // Delayed keyboard close to prevent rapid open/close cycles
+        this._pendingCloseTimeout = null;
     }
 
     enable() {
@@ -91,6 +94,12 @@ export default class OSKAutoOpenExtension extends Extension {
 
         // Disconnect text actor detection
         this._disconnectTextActorDetection();
+
+        // Cancel any pending close
+        if (this._pendingCloseTimeout) {
+            GLib.source_remove(this._pendingCloseTimeout);
+            this._pendingCloseTimeout = null;
+        }
 
         // Clean up settings
         if (this._settings) {
@@ -210,57 +219,16 @@ export default class OSKAutoOpenExtension extends Extension {
             if (targetActor instanceof Clutter.Text) {
                 // Check if we should trigger (based on last input method)
                 if (this._lastInputWasTouch && !this._keyboardManuallyToggled) {
+                    // Force immediate keyboard opening
+                    this._lastInputWasTouch = true;
+                    this._currentFocusState = false; // Reset to trigger show on next poll
+
                     if (this._settings.get_boolean('debug-mode')) {
                         console.log(`[OSK Auto Open] Direct text actor click detected: ${targetActor.constructor.name}`);
                     }
 
-                    // First, enable the keyboard
-                    if (!this._a11ySettings.get_boolean(A11Y_KEYBOARD_KEY)) {
-                        this._a11ySettings.set_boolean(A11Y_KEYBOARD_KEY, true);
-
-                        if (this._settings.get_boolean('debug-mode')) {
-                            console.log('[OSK Auto Open] Keyboard enabled, will re-emit click for proper focus detection');
-                        }
-                    }
-
-                    // Re-emit the click event after a short delay to ensure keyboard is ready
-                    // This allows GNOME's input method to properly detect the cursor location
-                    GLib.timeout_add(GLib.PRIORITY_HIGH, 100, () => {
-                        try {
-                            // Get event coordinates
-                            const [x, y] = event.get_coords();
-                            const device = event.get_device();
-                            const sourceDevice = event.get_source_device();
-
-                            // Create a new button press event at the same location
-                            const syntheticEvent = new Clutter.Event();
-                            syntheticEvent.set_button(event.get_button());
-                            syntheticEvent.set_coords(x, y);
-                            syntheticEvent.set_device(device);
-                            syntheticEvent.set_source_device(sourceDevice);
-                            syntheticEvent.set_stage(global.stage);
-                            syntheticEvent.set_time(event.get_time() + 100);
-                            syntheticEvent.type = Clutter.EventType.BUTTON_PRESS;
-
-                            // Put the event into the queue
-                            targetActor.event(syntheticEvent, false);
-
-                            if (this._settings.get_boolean('debug-mode')) {
-                                console.log(`[OSK Auto Open] Re-emitted click at (${x}, ${y}) to trigger proper focus`);
-                            }
-                        } catch (error) {
-                            if (this._settings.get_boolean('debug-mode')) {
-                                console.error('[OSK Auto Open] Failed to re-emit click:', error);
-                            }
-                        }
-                        return GLib.SOURCE_REMOVE;
-                    });
-
-                    // Also trigger an immediate focus check
-                    this._currentFocusState = false; // Reset to trigger show on next poll
-                    this._lastInputWasTouch = true;
-
-                    GLib.timeout_add(GLib.PRIORITY_HIGH, 150, () => {
+                    // Trigger an immediate focus check instead of waiting for polling
+                    GLib.timeout_add(GLib.PRIORITY_HIGH, 50, () => {
                         this._checkInputFocus();
                         return GLib.SOURCE_REMOVE;
                     });
@@ -366,6 +334,16 @@ export default class OSKAutoOpenExtension extends Extension {
      * Show the on-screen keyboard
      */
     _showKeyboard() {
+        // Cancel any pending close operation
+        if (this._pendingCloseTimeout) {
+            GLib.source_remove(this._pendingCloseTimeout);
+            this._pendingCloseTimeout = null;
+
+            if (this._settings && this._settings.get_boolean('debug-mode')) {
+                console.log('[OSK Auto Open] Cancelled pending keyboard close');
+            }
+        }
+
         // First enable the accessibility setting if not already enabled
         if (!this._a11ySettings.get_boolean(A11Y_KEYBOARD_KEY)) {
             this._a11ySettings.set_boolean(A11Y_KEYBOARD_KEY, true);
@@ -386,23 +364,44 @@ export default class OSKAutoOpenExtension extends Extension {
     }
 
     /**
-     * Hide the on-screen keyboard
+     * Hide the on-screen keyboard (with delay to prevent rapid open/close cycles)
      */
     _hideKeyboard() {
-        // Directly call the keyboard's close method
-        if (Main.keyboard && Main.keyboard.close) {
-            Main.keyboard.close();
-
+        // If there's already a pending close, don't schedule another
+        if (this._pendingCloseTimeout) {
             if (this._settings && this._settings.get_boolean('debug-mode')) {
-                console.log('[OSK Auto Open] Keyboard closed via Main.keyboard.close()');
+                console.log('[OSK Auto Open] Close already pending, skipping');
             }
-        } else if (this._a11ySettings.get_boolean(A11Y_KEYBOARD_KEY)) {
-            this._a11ySettings.set_boolean(A11Y_KEYBOARD_KEY, false);
-
-            if (this._settings && this._settings.get_boolean('debug-mode')) {
-                console.log('[OSK Auto Open] Keyboard disabled via GSettings');
-            }
+            return;
         }
+
+        const closeDelay = this._settings ? this._settings.get_int('close-delay-ms') : 500;
+
+        if (this._settings && this._settings.get_boolean('debug-mode')) {
+            console.log(`[OSK Auto Open] Scheduling keyboard close in ${closeDelay}ms`);
+        }
+
+        // Schedule the close after a delay
+        this._pendingCloseTimeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, closeDelay, () => {
+            this._pendingCloseTimeout = null;
+
+            // Directly call the keyboard's close method
+            if (Main.keyboard && Main.keyboard.close) {
+                Main.keyboard.close();
+
+                if (this._settings && this._settings.get_boolean('debug-mode')) {
+                    console.log('[OSK Auto Open] Keyboard closed via Main.keyboard.close()');
+                }
+            } else if (this._a11ySettings.get_boolean(A11Y_KEYBOARD_KEY)) {
+                this._a11ySettings.set_boolean(A11Y_KEYBOARD_KEY, false);
+
+                if (this._settings && this._settings.get_boolean('debug-mode')) {
+                    console.log('[OSK Auto Open] Keyboard disabled via GSettings');
+                }
+            }
+
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     /**

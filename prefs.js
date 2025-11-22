@@ -95,27 +95,29 @@ export default class OSKAutoOpenPreferences extends ExtensionPreferences {
         clutterDetectionRow.activatable_widget = clutterDetectionSwitch;
         advancedGroup.add(clutterDetectionRow);
 
-        // Window position adjustment toggle
-        const windowAdjustRow = new Adw.ActionRow({
-            title: 'Adjust Window Position',
-            subtitle: 'Push window up when keyboard appears (like gjs-osk)',
+        // Close delay adjustment
+        const closeDelayRow = new Adw.ActionRow({
+            title: 'Close Delay',
+            subtitle: 'Delay before closing keyboard when focus lost (milliseconds)',
         });
 
-        const windowAdjustSwitch = new Gtk.Switch({
-            active: settings.get_boolean('adjust-window-position'),
+        const closeDelaySpinButton = new Gtk.SpinButton({
+            adjustment: new Gtk.Adjustment({
+                lower: 0,
+                upper: 2000,
+                step_increment: 100,
+            }),
+            value: settings.get_int('close-delay-ms'),
             valign: Gtk.Align.CENTER,
         });
 
-        settings.bind(
-            'adjust-window-position',
-            windowAdjustSwitch,
-            'active',
-            Gio.SettingsBindFlags.DEFAULT
-        );
+        closeDelaySpinButton.connect('value-changed', (widget) => {
+            settings.set_int('close-delay-ms', widget.get_value());
+        });
 
-        windowAdjustRow.add_suffix(windowAdjustSwitch);
-        windowAdjustRow.activatable_widget = windowAdjustSwitch;
-        advancedGroup.add(windowAdjustRow);
+        closeDelayRow.add_suffix(closeDelaySpinButton);
+        closeDelayRow.activatable_widget = closeDelaySpinButton;
+        advancedGroup.add(closeDelayRow);
 
         // Debug mode toggle
         const debugModeRow = new Adw.ActionRow({

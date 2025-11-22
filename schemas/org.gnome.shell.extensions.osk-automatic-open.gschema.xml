@@ -42,13 +42,14 @@
       </description>
     </key>
 
-    <key name="adjust-window-position" type="b">
-      <default>true</default>
-      <summary>Adjust window position when keyboard appears</summary>
+    <key name="close-delay-ms" type="i">
+      <default>500</default>
+      <range min="0" max="2000"/>
+      <summary>Keyboard close delay</summary>
       <description>
-        Automatically move the focused window upward when the keyboard opens
-        to prevent the keyboard from covering the text input field.
-        This mimics the behavior of gjs-osk.
+        Delay in milliseconds before closing the keyboard when focus is lost.
+        Prevents rapid open/close cycles in fullscreen web browsers.
+        0 = immediate close, 500 = default (recommended), 2000 = maximum delay.
       </description>
     </key>
 
