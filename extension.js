@@ -321,7 +321,7 @@ export default class OSKAutoOpenExtension extends Extension {
     }
 
     /**
-     * Show the on-screen keyboard by enabling accessibility and opening directly
+     * Show the on-screen keyboard by enabling accessibility and triggering virtual focus
      */
     _showKeyboard() {
         // First enable the accessibility setting if not already enabled
@@ -333,16 +333,33 @@ export default class OSKAutoOpenExtension extends Extension {
             }
         }
 
-        // Open the keyboard directly
-        // GNOME will handle positioning via cursor-location-changed signal
-        // and will close automatically when focus is lost
-        if (Main.keyboard) {
-            // Call open() without parameters - GNOME will handle the rest
-            Main.keyboard.open();
+        // Trigger a virtual focus event to make GNOME open the keyboard
+        // This ensures the input method protocol is properly activated
+        if (Main.inputMethod && Main.inputMethod.currentFocus) {
+            const focus = Main.inputMethod.currentFocus;
 
-            if (this._settings && this._settings.get_boolean('debug-mode')) {
-                console.log('[OSK Auto Open] Keyboard opened directly');
-            }
+            // Re-trigger the focus to ensure keyboard opens
+            // This simulates the natural flow: enable accessibility → detect focus → open keyboard
+            GLib.timeout_add(GLib.PRIORITY_HIGH, 50, () => {
+                try {
+                    // Get the focused widget and re-notify the input method about it
+                    if (focus && focus.is_focused && focus.is_focused()) {
+                        // Trigger input method update by simulating focus change
+                        if (Main.inputMethod.update) {
+                            Main.inputMethod.update();
+                        }
+
+                        if (this._settings && this._settings.get_boolean('debug-mode')) {
+                            console.log('[OSK Auto Open] Triggered virtual focus update for keyboard');
+                        }
+                    }
+                } catch (error) {
+                    if (this._settings && this._settings.get_boolean('debug-mode')) {
+                        console.error('[OSK Auto Open] Failed to trigger virtual focus:', error);
+                    }
+                }
+                return GLib.SOURCE_REMOVE;
+            });
         }
     }
 
