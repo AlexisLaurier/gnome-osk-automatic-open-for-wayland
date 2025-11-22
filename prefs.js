@@ -95,30 +95,6 @@ export default class OSKAutoOpenPreferences extends ExtensionPreferences {
         clutterDetectionRow.activatable_widget = clutterDetectionSwitch;
         advancedGroup.add(clutterDetectionRow);
 
-        // Close delay adjustment
-        const closeDelayRow = new Adw.ActionRow({
-            title: 'Close Delay',
-            subtitle: 'Delay before closing keyboard when focus lost (milliseconds)',
-        });
-
-        const closeDelaySpinButton = new Gtk.SpinButton({
-            adjustment: new Gtk.Adjustment({
-                lower: 0,
-                upper: 2000,
-                step_increment: 100,
-            }),
-            value: settings.get_int('close-delay-ms'),
-            valign: Gtk.Align.CENTER,
-        });
-
-        closeDelaySpinButton.connect('value-changed', (widget) => {
-            settings.set_int('close-delay-ms', widget.get_value());
-        });
-
-        closeDelayRow.add_suffix(closeDelaySpinButton);
-        closeDelayRow.activatable_widget = closeDelaySpinButton;
-        advancedGroup.add(closeDelayRow);
-
         // Debug mode toggle
         const debugModeRow = new Adw.ActionRow({
             title: 'Debug Mode',

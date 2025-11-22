@@ -57,9 +57,6 @@ export default class OSKAutoOpenExtension extends Extension {
 
         // Direct text actor detection
         this._textActorConnection = null;
-
-        // Delayed keyboard close to prevent rapid open/close cycles
-        this._pendingCloseTimeout = null;
     }
 
     enable() {
@@ -94,12 +91,6 @@ export default class OSKAutoOpenExtension extends Extension {
 
         // Disconnect text actor detection
         this._disconnectTextActorDetection();
-
-        // Cancel any pending close
-        if (this._pendingCloseTimeout) {
-            GLib.source_remove(this._pendingCloseTimeout);
-            this._pendingCloseTimeout = null;
-        }
 
         // Clean up settings
         if (this._settings) {
@@ -316,9 +307,8 @@ export default class OSKAutoOpenExtension extends Extension {
             // Update keyboard state if needed
             if (shouldShowKeyboard && !this._currentFocusState) {
                 this._showKeyboard();
-            } else if (!hasFocus && this._currentFocusState && !this._keyboardManuallyToggled) {
-                this._hideKeyboard();
             }
+            // Note: No need to hide keyboard - it closes automatically when focus is lost
 
             this._currentFocusState = hasFocus;
 
@@ -331,77 +321,46 @@ export default class OSKAutoOpenExtension extends Extension {
     }
 
     /**
-     * Show the on-screen keyboard
+     * Show the on-screen keyboard by enabling accessibility and triggering virtual focus
      */
     _showKeyboard() {
-        // Cancel any pending close operation
-        if (this._pendingCloseTimeout) {
-            GLib.source_remove(this._pendingCloseTimeout);
-            this._pendingCloseTimeout = null;
-
-            if (this._settings && this._settings.get_boolean('debug-mode')) {
-                console.log('[OSK Auto Open] Cancelled pending keyboard close');
-            }
-        }
-
         // First enable the accessibility setting if not already enabled
         if (!this._a11ySettings.get_boolean(A11Y_KEYBOARD_KEY)) {
             this._a11ySettings.set_boolean(A11Y_KEYBOARD_KEY, true);
-        }
-
-        // Then directly call the keyboard's open method
-        if (Main.keyboard && Main.keyboard.open) {
-            Main.keyboard.open(Main.layoutManager.bottomIndex);
 
             if (this._settings && this._settings.get_boolean('debug-mode')) {
-                console.log('[OSK Auto Open] Keyboard opened via Main.keyboard.open()');
-            }
-        } else {
-            if (this._settings && this._settings.get_boolean('debug-mode')) {
-                console.log('[OSK Auto Open] Keyboard enabled via GSettings (Main.keyboard not available)');
+                console.log('[OSK Auto Open] Keyboard accessibility enabled');
             }
         }
-    }
 
-    /**
-     * Hide the on-screen keyboard (with delay to prevent rapid open/close cycles)
-     */
-    _hideKeyboard() {
-        // If there's already a pending close, don't schedule another
-        if (this._pendingCloseTimeout) {
-            if (this._settings && this._settings.get_boolean('debug-mode')) {
-                console.log('[OSK Auto Open] Close already pending, skipping');
-            }
-            return;
-        }
+        // Trigger a virtual focus event to make GNOME open the keyboard
+        // This ensures the input method protocol is properly activated
+        if (Main.inputMethod && Main.inputMethod.currentFocus) {
+            const focus = Main.inputMethod.currentFocus;
 
-        const closeDelay = this._settings ? this._settings.get_int('close-delay-ms') : 500;
+            // Re-trigger the focus to ensure keyboard opens
+            // This simulates the natural flow: enable accessibility → detect focus → open keyboard
+            GLib.timeout_add(GLib.PRIORITY_HIGH, 50, () => {
+                try {
+                    // Get the focused widget and re-notify the input method about it
+                    if (focus && focus.is_focused && focus.is_focused()) {
+                        // Trigger input method update by simulating focus change
+                        if (Main.inputMethod.update) {
+                            Main.inputMethod.update();
+                        }
 
-        if (this._settings && this._settings.get_boolean('debug-mode')) {
-            console.log(`[OSK Auto Open] Scheduling keyboard close in ${closeDelay}ms`);
-        }
-
-        // Schedule the close after a delay
-        this._pendingCloseTimeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, closeDelay, () => {
-            this._pendingCloseTimeout = null;
-
-            // Directly call the keyboard's close method
-            if (Main.keyboard && Main.keyboard.close) {
-                Main.keyboard.close();
-
-                if (this._settings && this._settings.get_boolean('debug-mode')) {
-                    console.log('[OSK Auto Open] Keyboard closed via Main.keyboard.close()');
+                        if (this._settings && this._settings.get_boolean('debug-mode')) {
+                            console.log('[OSK Auto Open] Triggered virtual focus update for keyboard');
+                        }
+                    }
+                } catch (error) {
+                    if (this._settings && this._settings.get_boolean('debug-mode')) {
+                        console.error('[OSK Auto Open] Failed to trigger virtual focus:', error);
+                    }
                 }
-            } else if (this._a11ySettings.get_boolean(A11Y_KEYBOARD_KEY)) {
-                this._a11ySettings.set_boolean(A11Y_KEYBOARD_KEY, false);
-
-                if (this._settings && this._settings.get_boolean('debug-mode')) {
-                    console.log('[OSK Auto Open] Keyboard disabled via GSettings');
-                }
-            }
-
-            return GLib.SOURCE_REMOVE;
-        });
+                return GLib.SOURCE_REMOVE;
+            });
+        }
     }
 
     /**
