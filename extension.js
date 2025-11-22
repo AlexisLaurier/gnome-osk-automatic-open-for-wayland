@@ -321,7 +321,7 @@ export default class OSKAutoOpenExtension extends Extension {
     }
 
     /**
-     * Show the on-screen keyboard by enabling accessibility and triggering virtual focus
+     * Show the on-screen keyboard by enabling accessibility and triggering cursor location
      */
     _showKeyboard() {
         // First enable the accessibility setting if not already enabled
@@ -333,29 +333,29 @@ export default class OSKAutoOpenExtension extends Extension {
             }
         }
 
-        // Trigger a virtual focus event to make GNOME open the keyboard
-        // This ensures the input method protocol is properly activated
+        // Trigger keyboard by notifying the input method of cursor location
+        // This is the same signal that GNOME uses naturally when a field gets focus
         if (Main.inputMethod && Main.inputMethod.currentFocus) {
             const focus = Main.inputMethod.currentFocus;
 
-            // Re-trigger the focus to ensure keyboard opens
-            // This simulates the natural flow: enable accessibility → detect focus → open keyboard
             GLib.timeout_add(GLib.PRIORITY_HIGH, 50, () => {
                 try {
-                    // Get the focused widget and re-notify the input method about it
                     if (focus && focus.is_focused && focus.is_focused()) {
-                        // Trigger input method update by simulating focus change
-                        if (Main.inputMethod.update) {
-                            Main.inputMethod.update();
-                        }
+                        // Get cursor rectangle from the focused widget
+                        const cursorRect = focus.get_cursor_location();
 
-                        if (this._settings && this._settings.get_boolean('debug-mode')) {
-                            console.log('[OSK Auto Open] Triggered virtual focus update for keyboard');
+                        if (cursorRect && Main.inputMethod.setCursorLocation) {
+                            // Notify input method of cursor location - this triggers keyboard opening
+                            Main.inputMethod.setCursorLocation(focus, cursorRect.x, cursorRect.y, cursorRect.width, cursorRect.height);
+
+                            if (this._settings && this._settings.get_boolean('debug-mode')) {
+                                console.log('[OSK Auto Open] Cursor location signaled to input method');
+                            }
                         }
                     }
                 } catch (error) {
                     if (this._settings && this._settings.get_boolean('debug-mode')) {
-                        console.error('[OSK Auto Open] Failed to trigger virtual focus:', error);
+                        console.error('[OSK Auto Open] Failed to signal cursor location:', error);
                     }
                 }
                 return GLib.SOURCE_REMOVE;
