@@ -169,6 +169,11 @@ export default class OSKAutoOpenExtension extends Extension {
                 }
             }
 
+            // If keyboard is visible and we received any input event, raise it to top
+            if (this._lastInputWasTouch && (isTouchEvent || eventType === EventType.BUTTON_PRESS)) {
+                this._raiseKeyboardToTop();
+            }
+
             return Clutter.EVENT_PROPAGATE;
         });
 
@@ -307,8 +312,9 @@ export default class OSKAutoOpenExtension extends Extension {
             // Update keyboard state if needed
             if (shouldShowKeyboard && !this._currentFocusState) {
                 this._showKeyboard();
+            } else if (!hasFocus && this._currentFocusState && !this._keyboardManuallyToggled) {
+                this._hideKeyboard();
             }
-            // Note: No need to hide keyboard - it closes automatically when focus is lost
 
             this._currentFocusState = hasFocus;
 
@@ -321,99 +327,77 @@ export default class OSKAutoOpenExtension extends Extension {
     }
 
     /**
-     * Show the on-screen keyboard by enabling accessibility and triggering focus cycle
+     * Show the on-screen keyboard
      */
     _showKeyboard() {
-        if (this._settings && this._settings.get_boolean('debug-mode')) {
-            console.log('[OSK Auto Open] _showKeyboard() called');
+        // First enable the accessibility setting if not already enabled
+        if (!this._a11ySettings.get_boolean(A11Y_KEYBOARD_KEY)) {
+            this._a11ySettings.set_boolean(A11Y_KEYBOARD_KEY, true);
         }
 
-        // First enable the accessibility setting if not already enabled
-        const wasEnabled = this._a11ySettings.get_boolean(A11Y_KEYBOARD_KEY);
-        if (!wasEnabled) {
-            this._a11ySettings.set_boolean(A11Y_KEYBOARD_KEY, true);
+        // Then directly call the keyboard's open method
+        if (Main.keyboard && Main.keyboard.open) {
+            Main.keyboard.open(Main.layoutManager.bottomIndex);
 
             if (this._settings && this._settings.get_boolean('debug-mode')) {
-                console.log('[OSK Auto Open] Keyboard accessibility enabled');
+                console.log('[OSK Auto Open] Keyboard opened via Main.keyboard.open()');
             }
 
-            // When we first enable accessibility, wait a bit for GNOME to initialize the keyboard
-            // then trigger a focus cycle
-            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 200, () => {
-                this._triggerFocusCycle();
+            // Ensure keyboard is raised to top after opening
+            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => {
+                this._raiseKeyboardToTop();
                 return GLib.SOURCE_REMOVE;
             });
         } else {
-            // Accessibility already enabled, trigger focus cycle immediately
-            this._triggerFocusCycle();
+            if (this._settings && this._settings.get_boolean('debug-mode')) {
+                console.log('[OSK Auto Open] Keyboard enabled via GSettings (Main.keyboard not available)');
+            }
         }
     }
 
     /**
-     * Trigger a focus cycle to make GNOME detect the focused field
+     * Raise the keyboard to the top of the window stack
      */
-    _triggerFocusCycle() {
-        if (!Main.inputMethod || !Main.inputMethod.currentFocus) {
+    _raiseKeyboardToTop() {
+        try {
+            if (Main.layoutManager.keyboardBox && Main.layoutManager.keyboardBox.visible) {
+                // Get the keyboard container
+                const keyboardBox = Main.layoutManager.keyboardBox;
+
+                // Raise it to the top of the chrome (UI layer)
+                if (Main.layoutManager.uiGroup) {
+                    Main.layoutManager.uiGroup.set_child_above_sibling(keyboardBox, null);
+
+                    if (this._settings && this._settings.get_boolean('debug-mode')) {
+                        console.log('[OSK Auto Open] Keyboard raised to top');
+                    }
+                }
+            }
+        } catch (error) {
             if (this._settings && this._settings.get_boolean('debug-mode')) {
-                console.log('[OSK Auto Open] No focus to cycle');
+                console.error('[OSK Auto Open] Failed to raise keyboard:', error);
             }
-            return;
         }
+    }
 
-        const focus = Main.inputMethod.currentFocus;
+    /**
+     * Hide the on-screen keyboard
+     */
+    _hideKeyboard() {
+        // Directly call the keyboard's close method
+        if (Main.keyboard && Main.keyboard.close) {
+            Main.keyboard.close();
 
-        // Try different methods to trigger keyboard showing
-        GLib.timeout_add(GLib.PRIORITY_HIGH, 10, () => {
-            try {
-                // Check if _keyboard property exists and has methods
-                if (Main.keyboard && Main.keyboard._keyboard) {
-                    const kb = Main.keyboard._keyboard;
-
-                    if (this._settings && this._settings.get_boolean('debug-mode')) {
-                        console.log('[OSK Auto Open] _keyboard object exists');
-                        console.log('[OSK Auto Open] _keyboard has open:', typeof kb.open);
-                        console.log('[OSK Auto Open] _keyboard has show:', typeof kb.show);
-                        console.log('[OSK Auto Open] _keyboard has visible:', typeof kb.visible);
-                    }
-
-                    // Try calling open() on the actual keyboard widget
-                    if (typeof kb.open === 'function') {
-                        kb.open();
-                        if (this._settings && this._settings.get_boolean('debug-mode')) {
-                            console.log('[OSK Auto Open] Called _keyboard.open()');
-                        }
-                    }
-                    // Try show()
-                    else if (typeof kb.show === 'function') {
-                        kb.show();
-                        if (this._settings && this._settings.get_boolean('debug-mode')) {
-                            console.log('[OSK Auto Open] Called _keyboard.show()');
-                        }
-                    }
-                    // Try setting visible
-                    else if (kb.visible !== undefined) {
-                        kb.visible = true;
-                        if (this._settings && this._settings.get_boolean('debug-mode')) {
-                            console.log('[OSK Auto Open] Set _keyboard.visible = true');
-                        }
-                    }
-                    else {
-                        if (this._settings && this._settings.get_boolean('debug-mode')) {
-                            console.log('[OSK Auto Open] No suitable method on _keyboard');
-                        }
-                    }
-                } else {
-                    if (this._settings && this._settings.get_boolean('debug-mode')) {
-                        console.log('[OSK Auto Open] No _keyboard property found');
-                    }
-                }
-            } catch (error) {
-                if (this._settings && this._settings.get_boolean('debug-mode')) {
-                    console.error('[OSK Auto Open] Trigger keyboard failed:', error);
-                }
+            if (this._settings && this._settings.get_boolean('debug-mode')) {
+                console.log('[OSK Auto Open] Keyboard closed via Main.keyboard.close()');
             }
-            return GLib.SOURCE_REMOVE;
-        });
+        } else if (this._a11ySettings.get_boolean(A11Y_KEYBOARD_KEY)) {
+            this._a11ySettings.set_boolean(A11Y_KEYBOARD_KEY, false);
+
+            if (this._settings && this._settings.get_boolean('debug-mode')) {
+                console.log('[OSK Auto Open] Keyboard disabled via GSettings');
+            }
+        }
     }
 
     /**
