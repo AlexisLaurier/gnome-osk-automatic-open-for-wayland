@@ -337,7 +337,8 @@ export default class OSKAutoOpenExtension extends Extension {
         // GNOME will handle positioning via cursor-location-changed signal
         // and will close automatically when focus is lost
         if (Main.keyboard) {
-            Main.keyboard.open(Main.layoutManager.bottomIndex + 1);
+            // Call open() without parameters - GNOME will handle the rest
+            Main.keyboard.open();
 
             if (this._settings && this._settings.get_boolean('debug-mode')) {
                 console.log('[OSK Auto Open] Keyboard opened directly');
