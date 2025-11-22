@@ -1,0 +1,29 @@
+# Compiled schemas
+schemas/gschemas.compiled
+
+# Temporary files
+*~
+*.swp
+*.swo
+.*.swp
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.zip
+build/
+dist/
+
+# Node modules (if using any build tools)
+node_modules/
+package-lock.json
+
+# Logs
+*.log

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.osk-automatic-open" path="/org/gnome/shell/extensions/osk-automatic-open/">
+
+    <key name="detection-mode" type="i">
+      <default>1</default>
+      <summary>Detection mode</summary>
+      <description>
+        Controls when the keyboard should automatically open:
+        0 = Never (disabled)
+        1 = Touch only (recommended, opens only on touch events)
+        2 = Always (opens on any input event)
+      </description>
+    </key>
+
+    <key name="poll-interval" type="i">
+      <default>300</default>
+      <range min="100" max="1000"/>
+      <summary>Focus polling interval</summary>
+      <description>
+        Interval in milliseconds for checking text field focus.
+        Lower values = more responsive but higher CPU usage.
+        Recommended: 300ms (same as gjs-osk)
+      </description>
+    </key>
+
+    <key name="debug-mode" type="b">
+      <default>false</default>
+      <summary>Debug mode</summary>
+      <description>
+        Enable debug logging to system journal.
+        Use 'journalctl -f -o cat /usr/bin/gnome-shell' to view logs.
+      </description>
+    </key>
+
+    <key name="enable-clutter-detection" type="b">
+      <default>true</default>
+      <summary>Enable Clutter.Text detection</summary>
+      <description>
+        Enable direct detection of Clutter.Text widgets for faster response.
+        Recommended: enabled for native GNOME applications.
+      </description>
+    </key>
+
+  </schema>
+</schemalist>
