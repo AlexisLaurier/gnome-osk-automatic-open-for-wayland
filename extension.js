@@ -362,24 +362,41 @@ export default class OSKAutoOpenExtension extends Extension {
 
         const focus = Main.inputMethod.currentFocus;
 
-        // Force the input method to re-detect the focus by calling its internal methods
-        // First, simulate focus out
-        if (Main.inputMethod._currentFocus) {
-            Main.inputMethod._currentFocus = null;
-        }
-
-        // Then restore focus after a brief delay
+        // Try different methods to trigger keyboard showing
         GLib.timeout_add(GLib.PRIORITY_HIGH, 10, () => {
             try {
-                Main.inputMethod._currentFocus = focus;
+                // Method 1: Try calling show() on the keyboard if available
+                if (Main.keyboard && typeof Main.keyboard.show === 'function') {
+                    Main.keyboard.show(-1); // -1 for default monitor
 
-                // Emit focus-in signal if available
-                if (Main.inputMethod.emit && focus) {
-                    Main.inputMethod.emit('focus-in');
+                    if (this._settings && this._settings.get_boolean('debug-mode')) {
+                        console.log('[OSK Auto Open] Called Main.keyboard.show()');
+                    }
                 }
+                // Method 2: Try setting visibility directly
+                else if (Main.keyboard && Main.keyboard._keyboardVisible !== undefined) {
+                    Main.keyboard._keyboardVisible = true;
 
-                if (this._settings && this._settings.get_boolean('debug-mode')) {
-                    console.log('[OSK Auto Open] Focus cycle triggered');
+                    if (this._settings && this._settings.get_boolean('debug-mode')) {
+                        console.log('[OSK Auto Open] Set _keyboardVisible = true');
+                    }
+                }
+                // Method 3: Try calling the input method's focus handler
+                else if (Main.inputMethod && typeof Main.inputMethod._onFocusIn === 'function') {
+                    Main.inputMethod._onFocusIn();
+
+                    if (this._settings && this._settings.get_boolean('debug-mode')) {
+                        console.log('[OSK Auto Open] Called _onFocusIn()');
+                    }
+                }
+                else {
+                    if (this._settings && this._settings.get_boolean('debug-mode')) {
+                        console.log('[OSK Auto Open] No suitable method found to show keyboard');
+                        // Log available methods for debugging
+                        if (Main.keyboard) {
+                            console.log('[OSK Auto Open] Main.keyboard methods:', Object.getOwnPropertyNames(Main.keyboard));
+                        }
+                    }
                 }
             } catch (error) {
                 if (this._settings && this._settings.get_boolean('debug-mode')) {
