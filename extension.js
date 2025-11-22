@@ -321,7 +321,7 @@ export default class OSKAutoOpenExtension extends Extension {
     }
 
     /**
-     * Show the on-screen keyboard by enabling accessibility and triggering cursor location
+     * Show the on-screen keyboard by enabling accessibility and triggering focus cycle
      */
     _showKeyboard() {
         if (this._settings && this._settings.get_boolean('debug-mode')) {
@@ -329,75 +329,65 @@ export default class OSKAutoOpenExtension extends Extension {
         }
 
         // First enable the accessibility setting if not already enabled
-        if (!this._a11ySettings.get_boolean(A11Y_KEYBOARD_KEY)) {
+        const wasEnabled = this._a11ySettings.get_boolean(A11Y_KEYBOARD_KEY);
+        if (!wasEnabled) {
             this._a11ySettings.set_boolean(A11Y_KEYBOARD_KEY, true);
 
             if (this._settings && this._settings.get_boolean('debug-mode')) {
                 console.log('[OSK Auto Open] Keyboard accessibility enabled');
             }
-        }
 
-        // Trigger keyboard by re-notifying the input method about current focus
-        // This simulates the natural focus change that GNOME uses to show the keyboard
-        if (Main.inputMethod && Main.inputMethod.currentFocus) {
-            const focus = Main.inputMethod.currentFocus;
-
-            if (this._settings && this._settings.get_boolean('debug-mode')) {
-                console.log(`[OSK Auto Open] Focus object: ${focus}, has is_focused: ${typeof focus.is_focused}`);
-            }
-
-            GLib.timeout_add(GLib.PRIORITY_HIGH, 50, () => {
-                try {
-                    if (this._settings && this._settings.get_boolean('debug-mode')) {
-                        console.log(`[OSK Auto Open] Timeout callback - focus: ${focus}, is_focused: ${focus ? focus.is_focused() : 'null'}`);
-                    }
-
-                    if (focus && focus.is_focused && focus.is_focused()) {
-                        // Try to get cursor position if available
-                        let x = 0, y = 0, w = 1, h = 1;
-
-                        // Check various methods that might exist on the focused widget
-                        if (typeof focus.get_cursor_rect === 'function') {
-                            const rect = focus.get_cursor_rect();
-                            x = rect.x; y = rect.y; w = rect.width; h = rect.height;
-                        } else if (typeof focus.cursor_position !== 'undefined') {
-                            // Some widgets have cursor_position property
-                            const pos = focus.cursor_position;
-                            if (pos && typeof pos.get_position === 'function') {
-                                [x, y] = pos.get_position();
-                            }
-                        }
-
-                        // Call setCursorLocation to trigger keyboard opening
-                        // Even with default coordinates, this signals the input method
-                        if (Main.inputMethod.setCursorLocation) {
-                            Main.inputMethod.setCursorLocation(focus, x, y, w, h);
-
-                            if (this._settings && this._settings.get_boolean('debug-mode')) {
-                                console.log(`[OSK Auto Open] Cursor location signaled: x=${x}, y=${y}, w=${w}, h=${h}`);
-                            }
-                        } else {
-                            if (this._settings && this._settings.get_boolean('debug-mode')) {
-                                console.log('[OSK Auto Open] setCursorLocation not available');
-                            }
-                        }
-                    } else {
-                        if (this._settings && this._settings.get_boolean('debug-mode')) {
-                            console.log('[OSK Auto Open] Focus check failed in timeout');
-                        }
-                    }
-                } catch (error) {
-                    if (this._settings && this._settings.get_boolean('debug-mode')) {
-                        console.error('[OSK Auto Open] Failed to signal cursor location:', error);
-                    }
-                }
+            // When we first enable accessibility, wait a bit for GNOME to initialize the keyboard
+            // then trigger a focus cycle
+            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 200, () => {
+                this._triggerFocusCycle();
                 return GLib.SOURCE_REMOVE;
             });
         } else {
-            if (this._settings && this._settings.get_boolean('debug-mode')) {
-                console.log('[OSK Auto Open] No inputMethod or currentFocus available');
-            }
+            // Accessibility already enabled, trigger focus cycle immediately
+            this._triggerFocusCycle();
         }
+    }
+
+    /**
+     * Trigger a focus cycle to make GNOME detect the focused field
+     */
+    _triggerFocusCycle() {
+        if (!Main.inputMethod || !Main.inputMethod.currentFocus) {
+            if (this._settings && this._settings.get_boolean('debug-mode')) {
+                console.log('[OSK Auto Open] No focus to cycle');
+            }
+            return;
+        }
+
+        const focus = Main.inputMethod.currentFocus;
+
+        // Force the input method to re-detect the focus by calling its internal methods
+        // First, simulate focus out
+        if (Main.inputMethod._currentFocus) {
+            Main.inputMethod._currentFocus = null;
+        }
+
+        // Then restore focus after a brief delay
+        GLib.timeout_add(GLib.PRIORITY_HIGH, 10, () => {
+            try {
+                Main.inputMethod._currentFocus = focus;
+
+                // Emit focus-in signal if available
+                if (Main.inputMethod.emit && focus) {
+                    Main.inputMethod.emit('focus-in');
+                }
+
+                if (this._settings && this._settings.get_boolean('debug-mode')) {
+                    console.log('[OSK Auto Open] Focus cycle triggered');
+                }
+            } catch (error) {
+                if (this._settings && this._settings.get_boolean('debug-mode')) {
+                    console.error('[OSK Auto Open] Focus cycle failed:', error);
+                }
+            }
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     /**
