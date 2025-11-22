@@ -346,11 +346,21 @@ export default class OSKAutoOpenExtension extends Extension {
      * Show the on-screen keyboard
      */
     _showKeyboard() {
+        // First enable the accessibility setting if not already enabled
         if (!this._a11ySettings.get_boolean(A11Y_KEYBOARD_KEY)) {
             this._a11ySettings.set_boolean(A11Y_KEYBOARD_KEY, true);
+        }
 
-            if (this._settings.get_boolean('debug-mode')) {
-                console.log('[OSK Auto Open] Keyboard opened');
+        // Then directly call the keyboard's open method
+        if (Main.keyboard && Main.keyboard.open) {
+            Main.keyboard.open(Main.layoutManager.bottomIndex);
+
+            if (this._settings && this._settings.get_boolean('debug-mode')) {
+                console.log('[OSK Auto Open] Keyboard opened via Main.keyboard.open()');
+            }
+        } else {
+            if (this._settings && this._settings.get_boolean('debug-mode')) {
+                console.log('[OSK Auto Open] Keyboard enabled via GSettings (Main.keyboard not available)');
             }
         }
     }
@@ -359,11 +369,18 @@ export default class OSKAutoOpenExtension extends Extension {
      * Hide the on-screen keyboard
      */
     _hideKeyboard() {
-        if (this._a11ySettings.get_boolean(A11Y_KEYBOARD_KEY)) {
+        // Directly call the keyboard's close method
+        if (Main.keyboard && Main.keyboard.close) {
+            Main.keyboard.close();
+
+            if (this._settings && this._settings.get_boolean('debug-mode')) {
+                console.log('[OSK Auto Open] Keyboard closed via Main.keyboard.close()');
+            }
+        } else if (this._a11ySettings.get_boolean(A11Y_KEYBOARD_KEY)) {
             this._a11ySettings.set_boolean(A11Y_KEYBOARD_KEY, false);
 
-            if (this._settings.get_boolean('debug-mode')) {
-                console.log('[OSK Auto Open] Keyboard closed');
+            if (this._settings && this._settings.get_boolean('debug-mode')) {
+                console.log('[OSK Auto Open] Keyboard disabled via GSettings');
             }
         }
     }
@@ -425,12 +442,39 @@ export default class OSKAutoOpenExtension extends Extension {
             return;
         }
 
+        // Store the focus window
         this._setFocusWindow(focusWindow);
-        this._animateWindow(focusWindow, true);
 
-        if (this._settings && this._settings.get_boolean('debug-mode')) {
-            console.log('[OSK Auto Open] Window pushed up for keyboard');
-        }
+        // Wait for keyboard to have a valid height before animating
+        // The keyboard box might be visible but not yet fully rendered
+        const waitForKeyboardHeight = () => {
+            const keyboardHeight = Main.layoutManager.keyboardBox.height;
+
+            if (this._settings && this._settings.get_boolean('debug-mode')) {
+                console.log(`[OSK Auto Open] Keyboard height check: ${keyboardHeight}px`);
+            }
+
+            if (keyboardHeight > 0) {
+                // Keyboard has valid height, animate now
+                this._animateWindow(focusWindow, true);
+
+                if (this._settings && this._settings.get_boolean('debug-mode')) {
+                    console.log(`[OSK Auto Open] Window pushed up for keyboard (height=${keyboardHeight}px)`);
+                }
+            } else {
+                // Keyboard height still 0, retry after a short delay
+                GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => {
+                    waitForKeyboardHeight();
+                    return GLib.SOURCE_REMOVE;
+                });
+            }
+        };
+
+        // Start checking for valid keyboard height
+        GLib.timeout_add(GLib.PRIORITY_DEFAULT, 50, () => {
+            waitForKeyboardHeight();
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     /**
@@ -470,6 +514,9 @@ export default class OSKAutoOpenExtension extends Extension {
      */
     _animateWindow(window, show) {
         if (!window || this._animationInProgress) {
+            if (this._settings && this._settings.get_boolean('debug-mode')) {
+                console.log(`[OSK Auto Open] Animation skipped: window=${!!window}, inProgress=${this._animationInProgress}`);
+            }
             return;
         }
 
@@ -478,6 +525,9 @@ export default class OSKAutoOpenExtension extends Extension {
         const windowActor = window.get_compositor_private();
         if (!windowActor) {
             this._animationInProgress = false;
+            if (this._settings && this._settings.get_boolean('debug-mode')) {
+                console.log('[OSK Auto Open] Animation failed: no window actor');
+            }
             return;
         }
 
@@ -496,9 +546,22 @@ export default class OSKAutoOpenExtension extends Extension {
 
         const deltaY = targetY - rect.y;
 
+        if (this._settings && this._settings.get_boolean('debug-mode')) {
+            console.log(`[OSK Auto Open] Animation params: ` +
+                      `keyboardHeight=${keyboardHeight}, ` +
+                      `startY=${this._focusWindowStartY}, ` +
+                      `currentY=${rect.y}, ` +
+                      `targetY=${targetY}, ` +
+                      `deltaY=${deltaY}, ` +
+                      `show=${show}`);
+        }
+
         if (Math.abs(deltaY) < 1) {
             // No significant movement needed
             this._animationInProgress = false;
+            if (this._settings && this._settings.get_boolean('debug-mode')) {
+                console.log('[OSK Auto Open] Animation skipped: deltaY too small');
+            }
             return;
         }
 
@@ -509,11 +572,14 @@ export default class OSKAutoOpenExtension extends Extension {
             mode: Clutter.AnimationMode.EASE_OUT_QUAD,
             onComplete: () => {
                 this._animationInProgress = false;
+                if (this._settings && this._settings.get_boolean('debug-mode')) {
+                    console.log(`[OSK Auto Open] Animation completed: translation_y=${windowActor.translation_y}`);
+                }
             }
         });
 
         if (this._settings && this._settings.get_boolean('debug-mode')) {
-            console.log(`[OSK Auto Open] Animating window: deltaY=${deltaY}, show=${show}`);
+            console.log(`[OSK Auto Open] Starting animation: translation_y ${show ? deltaY : 0}`);
         }
     }
 }
