@@ -42,5 +42,15 @@
       </description>
     </key>
 
+    <key name="adjust-window-position" type="b">
+      <default>true</default>
+      <summary>Adjust window position when keyboard appears</summary>
+      <description>
+        Automatically move the focused window upward when the keyboard opens
+        to prevent the keyboard from covering the text input field.
+        This mimics the behavior of gjs-osk.
+      </description>
+    </key>
+
   </schema>
 </schemalist>

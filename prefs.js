@@ -95,6 +95,28 @@ export default class OSKAutoOpenPreferences extends ExtensionPreferences {
         clutterDetectionRow.activatable_widget = clutterDetectionSwitch;
         advancedGroup.add(clutterDetectionRow);
 
+        // Window position adjustment toggle
+        const windowAdjustRow = new Adw.ActionRow({
+            title: 'Adjust Window Position',
+            subtitle: 'Push window up when keyboard appears (like gjs-osk)',
+        });
+
+        const windowAdjustSwitch = new Gtk.Switch({
+            active: settings.get_boolean('adjust-window-position'),
+            valign: Gtk.Align.CENTER,
+        });
+
+        settings.bind(
+            'adjust-window-position',
+            windowAdjustSwitch,
+            'active',
+            Gio.SettingsBindFlags.DEFAULT
+        );
+
+        windowAdjustRow.add_suffix(windowAdjustSwitch);
+        windowAdjustRow.activatable_widget = windowAdjustSwitch;
+        advancedGroup.add(windowAdjustRow);
+
         // Debug mode toggle
         const debugModeRow = new Adw.ActionRow({
             title: 'Debug Mode',
