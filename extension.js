@@ -370,8 +370,10 @@ export default class OSKAutoOpenExtension extends Extension {
                     const kb = Main.keyboard._keyboard;
 
                     if (this._settings && this._settings.get_boolean('debug-mode')) {
-                        console.log('[OSK Auto Open] _keyboard object found:', kb);
-                        console.log('[OSK Auto Open] _keyboard methods:', Object.getOwnPropertyNames(kb));
+                        console.log('[OSK Auto Open] _keyboard object exists');
+                        console.log('[OSK Auto Open] _keyboard has open:', typeof kb.open);
+                        console.log('[OSK Auto Open] _keyboard has show:', typeof kb.show);
+                        console.log('[OSK Auto Open] _keyboard has visible:', typeof kb.visible);
                     }
 
                     // Try calling open() on the actual keyboard widget
