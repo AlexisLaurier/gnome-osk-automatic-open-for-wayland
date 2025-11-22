@@ -26,13 +26,23 @@ const DetectionMode = {
 };
 
 // Clutter event types
+// Reference: https://gjs-docs.gnome.org/clutter13~13/clutter.eventtype
 const EventType = {
-    MOTION: 4,           // Mouse motion
-    ENTER: 5,            // Mouse enter
-    TOUCH_BEGIN: 9,      // Touch start
-    TOUCH_UPDATE: 10,    // Touch move
-    TOUCH_END: 11,       // Touch end
-    TOUCH_CANCEL: 12     // Touch cancel
+    MOTION: 4,              // Mouse motion (pointer movement)
+    ENTER: 5,               // Mouse enter (pointer enters actor)
+    BUTTON_PRESS: 6,        // Mouse/touchpad button press
+    BUTTON_RELEASE: 7,      // Mouse/touchpad button release
+    KEY_PRESS: 8,           // Keyboard key press
+    TOUCH_BEGIN: 9,         // Touch screen contact start
+    TOUCH_UPDATE: 10,       // Touch screen contact move
+    TOUCH_END: 11,          // Touch screen contact end
+    TOUCH_CANCEL: 12,       // Touch screen contact cancelled
+    TOUCHPAD_SWIPE: 13,     // Touchpad swipe gesture
+    TOUCHPAD_PINCH: 14,     // Touchpad pinch gesture
+    PAD_BUTTON_PRESS: 15,   // Pad button press
+    PAD_BUTTON_RELEASE: 16, // Pad button release
+    PAD_STRIP: 17,          // Pad strip
+    PAD_RING: 18            // Pad ring
 };
 
 export default class OSKAutoOpenExtension extends Extension {
@@ -51,6 +61,9 @@ export default class OSKAutoOpenExtension extends Extension {
         this._focusWindow = null;
         this._focusWindowStartY = null;
         this._animationInProgress = false;
+
+        // Direct text actor detection
+        this._textActorConnection = null;
     }
 
     enable() {
@@ -64,6 +77,9 @@ export default class OSKAutoOpenExtension extends Extension {
 
         // Connect to stage events to detect touch vs mouse input
         this._connectStageEvents();
+
+        // Connect direct text actor detection (for immediate response)
+        this._connectTextActorDetection();
 
         // Monitor keyboard visibility for window management
         this._connectKeyboardVisibility();
@@ -82,6 +98,9 @@ export default class OSKAutoOpenExtension extends Extension {
 
         // Disconnect stage events
         this._disconnectStageEvents();
+
+        // Disconnect text actor detection
+        this._disconnectTextActorDetection();
 
         // Disconnect keyboard visibility monitoring
         this._disconnectKeyboardVisibility();
@@ -122,14 +141,24 @@ export default class OSKAutoOpenExtension extends Extension {
         this._stageEventConnection = global.stage.connect('event', (_actor, event) => {
             const eventType = event.type();
 
-            // Ignore mouse motion and enter events (types 4-5)
+            // Ignore mouse motion and enter events (types 4-5) - these don't indicate intent to type
             if (eventType === EventType.MOTION || eventType === EventType.ENTER) {
                 return Clutter.EVENT_PROPAGATE;
             }
 
-            // Determine if this is a touch event (types 9-12)
-            const isTouchEvent = eventType >= EventType.TOUCH_BEGIN &&
-                               eventType <= EventType.TOUCH_CANCEL;
+            // Get the input device to determine if it's a touchscreen
+            const device = event.get_source_device();
+            const isTouchscreenDevice = device &&
+                device.get_device_type() === Clutter.InputDeviceType.TOUCHSCREEN_DEVICE;
+
+            // Determine if this is a touch-related event
+            // Include both native touch events (9-12) AND button presses from touchscreen devices
+            const isTouchEvent =
+                // Native touch events
+                (eventType >= EventType.TOUCH_BEGIN && eventType <= EventType.TOUCH_CANCEL) ||
+                // Button press/release from touchscreen device
+                (isTouchscreenDevice &&
+                 (eventType === EventType.BUTTON_PRESS || eventType === EventType.BUTTON_RELEASE));
 
             // Update last input method based on detection mode
             const detectionMode = this._settings.get_int('detection-mode');
@@ -142,8 +171,23 @@ export default class OSKAutoOpenExtension extends Extension {
                     this._lastInputWasTouch = isTouchEvent;
                     break;
                 case DetectionMode.ALWAYS:
+                    // In ALWAYS mode, accept any interaction (touch, mouse, button)
+                    // but still exclude pure motion/enter events
                     this._lastInputWasTouch = true;
                     break;
+            }
+
+            // Debug logging
+            if (this._settings && this._settings.get_boolean('debug-mode')) {
+                if (isTouchEvent || eventType === EventType.BUTTON_PRESS) {
+                    const deviceType = device ? device.get_device_type() : 'unknown';
+                    const deviceName = device ? device.get_device_name() : 'unknown';
+                    console.log(`[OSK Auto Open] Event: type=${eventType}, ` +
+                              `device=${deviceName} (type=${deviceType}), ` +
+                              `isTouchEvent=${isTouchEvent}, ` +
+                              `mode=${detectionMode}, ` +
+                              `willTrigger=${this._lastInputWasTouch}`);
+                }
             }
 
             return Clutter.EVENT_PROPAGATE;
@@ -160,6 +204,63 @@ export default class OSKAutoOpenExtension extends Extension {
             global.stage.disconnect(this._stageEventConnection);
             this._stageEventConnection = null;
             console.log('[OSK Auto Open] Stage event monitoring stopped');
+        }
+    }
+
+    /**
+     * Connect direct detection of Clutter.Text actors
+     * This provides immediate keyboard opening when clicking on text fields
+     * Based on gjs-osk's maybeHandleEvent override
+     */
+    _connectTextActorDetection() {
+        if (this._textActorConnection) {
+            return;
+        }
+
+        // Check if Clutter detection is enabled
+        if (!this._settings.get_boolean('enable-clutter-detection')) {
+            return;
+        }
+
+        // Monitor button press events on the stage to detect text actor clicks
+        this._textActorConnection = global.stage.connect('button-press-event', (_actor, event) => {
+            // Get the actor that received the event
+            const targetActor = global.stage.get_event_actor(event);
+
+            // Check if it's a text input actor
+            if (targetActor instanceof Clutter.Text) {
+                // Check if we should trigger (based on last input method)
+                if (this._lastInputWasTouch && !this._keyboardManuallyToggled) {
+                    // Force immediate keyboard opening
+                    this._lastInputWasTouch = true;
+                    this._currentFocusState = false; // Reset to trigger show on next poll
+
+                    if (this._settings.get_boolean('debug-mode')) {
+                        console.log(`[OSK Auto Open] Direct text actor click detected: ${targetActor.constructor.name}`);
+                    }
+
+                    // Trigger an immediate focus check instead of waiting for polling
+                    GLib.timeout_add(GLib.PRIORITY_HIGH, 50, () => {
+                        this._checkInputFocus();
+                        return GLib.SOURCE_REMOVE;
+                    });
+                }
+            }
+
+            return Clutter.EVENT_PROPAGATE;
+        });
+
+        console.log('[OSK Auto Open] Text actor detection started');
+    }
+
+    /**
+     * Disconnect text actor detection
+     */
+    _disconnectTextActorDetection() {
+        if (this._textActorConnection) {
+            global.stage.disconnect(this._textActorConnection);
+            this._textActorConnection = null;
+            console.log('[OSK Auto Open] Text actor detection stopped');
         }
     }
 
@@ -211,6 +312,19 @@ export default class OSKAutoOpenExtension extends Extension {
                                      this._lastInputWasTouch &&
                                      !this._keyboardManuallyToggled;
 
+            // Debug logging for focus state changes
+            if (this._settings && this._settings.get_boolean('debug-mode')) {
+                if (hasFocus !== this._currentFocusState) {
+                    const focusInfo = Main.inputMethod.currentFocus ?
+                        Main.inputMethod.currentFocus.constructor.name : 'null';
+                    console.log(`[OSK Auto Open] Focus changed: ${this._currentFocusState} → ${hasFocus}, ` +
+                              `widget=${focusInfo}, ` +
+                              `lastInputTouch=${this._lastInputWasTouch}, ` +
+                              `manualToggle=${this._keyboardManuallyToggled}, ` +
+                              `shouldShow=${shouldShowKeyboard}`);
+                }
+            }
+
             // Update keyboard state if needed
             if (shouldShowKeyboard && !this._currentFocusState) {
                 this._showKeyboard();
@@ -222,7 +336,7 @@ export default class OSKAutoOpenExtension extends Extension {
 
         } catch (error) {
             // Silently handle errors (can happen during shell transitions)
-            if (this._settings.get_boolean('debug-mode')) {
+            if (this._settings && this._settings.get_boolean('debug-mode')) {
                 console.error('[OSK Auto Open] Focus check error:', error);
             }
         }
