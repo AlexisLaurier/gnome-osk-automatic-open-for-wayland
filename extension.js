@@ -333,23 +333,36 @@ export default class OSKAutoOpenExtension extends Extension {
             }
         }
 
-        // Trigger keyboard by notifying the input method of cursor location
-        // This is the same signal that GNOME uses naturally when a field gets focus
+        // Trigger keyboard by re-notifying the input method about current focus
+        // This simulates the natural focus change that GNOME uses to show the keyboard
         if (Main.inputMethod && Main.inputMethod.currentFocus) {
             const focus = Main.inputMethod.currentFocus;
 
             GLib.timeout_add(GLib.PRIORITY_HIGH, 50, () => {
                 try {
                     if (focus && focus.is_focused && focus.is_focused()) {
-                        // Get cursor rectangle from the focused widget
-                        const cursorRect = focus.get_cursor_location();
+                        // Try to get cursor position if available
+                        let x = 0, y = 0, w = 1, h = 1;
 
-                        if (cursorRect && Main.inputMethod.setCursorLocation) {
-                            // Notify input method of cursor location - this triggers keyboard opening
-                            Main.inputMethod.setCursorLocation(focus, cursorRect.x, cursorRect.y, cursorRect.width, cursorRect.height);
+                        // Check various methods that might exist on the focused widget
+                        if (typeof focus.get_cursor_rect === 'function') {
+                            const rect = focus.get_cursor_rect();
+                            x = rect.x; y = rect.y; w = rect.width; h = rect.height;
+                        } else if (typeof focus.cursor_position !== 'undefined') {
+                            // Some widgets have cursor_position property
+                            const pos = focus.cursor_position;
+                            if (pos && typeof pos.get_position === 'function') {
+                                [x, y] = pos.get_position();
+                            }
+                        }
+
+                        // Call setCursorLocation to trigger keyboard opening
+                        // Even with default coordinates, this signals the input method
+                        if (Main.inputMethod.setCursorLocation) {
+                            Main.inputMethod.setCursorLocation(focus, x, y, w, h);
 
                             if (this._settings && this._settings.get_boolean('debug-mode')) {
-                                console.log('[OSK Auto Open] Cursor location signaled to input method');
+                                console.log(`[OSK Auto Open] Cursor location signaled: x=${x}, y=${y}, w=${w}, h=${h}`);
                             }
                         }
                     }
