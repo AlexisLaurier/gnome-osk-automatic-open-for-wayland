@@ -365,42 +365,49 @@ export default class OSKAutoOpenExtension extends Extension {
         // Try different methods to trigger keyboard showing
         GLib.timeout_add(GLib.PRIORITY_HIGH, 10, () => {
             try {
-                // Method 1: Try calling show() on the keyboard if available
-                if (Main.keyboard && typeof Main.keyboard.show === 'function') {
-                    Main.keyboard.show(-1); // -1 for default monitor
+                // Check if _keyboard property exists and has methods
+                if (Main.keyboard && Main.keyboard._keyboard) {
+                    const kb = Main.keyboard._keyboard;
 
                     if (this._settings && this._settings.get_boolean('debug-mode')) {
-                        console.log('[OSK Auto Open] Called Main.keyboard.show()');
+                        console.log('[OSK Auto Open] _keyboard object found:', kb);
+                        console.log('[OSK Auto Open] _keyboard methods:', Object.getOwnPropertyNames(kb));
                     }
-                }
-                // Method 2: Try setting visibility directly
-                else if (Main.keyboard && Main.keyboard._keyboardVisible !== undefined) {
-                    Main.keyboard._keyboardVisible = true;
 
-                    if (this._settings && this._settings.get_boolean('debug-mode')) {
-                        console.log('[OSK Auto Open] Set _keyboardVisible = true');
-                    }
-                }
-                // Method 3: Try calling the input method's focus handler
-                else if (Main.inputMethod && typeof Main.inputMethod._onFocusIn === 'function') {
-                    Main.inputMethod._onFocusIn();
-
-                    if (this._settings && this._settings.get_boolean('debug-mode')) {
-                        console.log('[OSK Auto Open] Called _onFocusIn()');
-                    }
-                }
-                else {
-                    if (this._settings && this._settings.get_boolean('debug-mode')) {
-                        console.log('[OSK Auto Open] No suitable method found to show keyboard');
-                        // Log available methods for debugging
-                        if (Main.keyboard) {
-                            console.log('[OSK Auto Open] Main.keyboard methods:', Object.getOwnPropertyNames(Main.keyboard));
+                    // Try calling open() on the actual keyboard widget
+                    if (typeof kb.open === 'function') {
+                        kb.open();
+                        if (this._settings && this._settings.get_boolean('debug-mode')) {
+                            console.log('[OSK Auto Open] Called _keyboard.open()');
                         }
+                    }
+                    // Try show()
+                    else if (typeof kb.show === 'function') {
+                        kb.show();
+                        if (this._settings && this._settings.get_boolean('debug-mode')) {
+                            console.log('[OSK Auto Open] Called _keyboard.show()');
+                        }
+                    }
+                    // Try setting visible
+                    else if (kb.visible !== undefined) {
+                        kb.visible = true;
+                        if (this._settings && this._settings.get_boolean('debug-mode')) {
+                            console.log('[OSK Auto Open] Set _keyboard.visible = true');
+                        }
+                    }
+                    else {
+                        if (this._settings && this._settings.get_boolean('debug-mode')) {
+                            console.log('[OSK Auto Open] No suitable method on _keyboard');
+                        }
+                    }
+                } else {
+                    if (this._settings && this._settings.get_boolean('debug-mode')) {
+                        console.log('[OSK Auto Open] No _keyboard property found');
                     }
                 }
             } catch (error) {
                 if (this._settings && this._settings.get_boolean('debug-mode')) {
-                    console.error('[OSK Auto Open] Focus cycle failed:', error);
+                    console.error('[OSK Auto Open] Trigger keyboard failed:', error);
                 }
             }
             return GLib.SOURCE_REMOVE;
