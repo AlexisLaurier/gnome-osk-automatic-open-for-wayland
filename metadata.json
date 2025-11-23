@@ -1,7 +1,7 @@
 {
   "name": "GNOME OSK Automatic Open for Wayland",
-  "description": "Automatically opens the GNOME on-screen keyboard (OSK) when a text field receives focus, especially for non-GTK applications. Inspired by gjs-osk detection logic.",
-  "uuid": "gnome-osk-automatic-open@gnome-shell-extensions.gcampax.github.com",
+  "description": "Automatically opens the GNOME on-screen keyboard when a text field receives focus, especially for non-GTK applications. Inspired by gjs-osk detection logic.",
+  "uuid": "gnome-osk-automatic-open@alexislaurier.fr",
   "shell-version": [
     "45",
     "46",

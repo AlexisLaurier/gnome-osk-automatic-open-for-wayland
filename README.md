@@ -4,11 +4,11 @@ Automatically opens the GNOME on-screen keyboard (OSK) when a text field receive
 
 ## 🎯 Purpose
 
-Many applications don't use the native GTK toolkit (Electron apps, Qt apps, web browsers), which means the GNOME on-screen keyboard doesn't automatically appear when touching a text field. This extension solves that problem by detecting text field focus and automatically enabling/disabling the system OSK.
+Many applications don't use the native GTK toolkit (Electron apps, Qt apps, web browsers), which means the GNOME on-screen keyboard doesn't automatically appear when touching a text field. This extension solves that problem by detecting text field focus and touch input to automatically open/close the system OSK.
 
 ## 🔍 Detection Logic
 
-This extension is based on the detection logic from [gjs-osk](https://github.com/Vishram1123/gjs-osk), adapted to control the native GNOME OSK instead of a custom keyboard widget.
+This extension uses detection logic inspired by [gjs-osk](https://github.com/Vishram1123/gjs-osk), adapted to control the native GNOME OSK.
 
 ### Three Detection Methods
 
@@ -18,7 +18,8 @@ This extension is based on the detection logic from [gjs-osk](https://github.com
    - Most reliable method for non-native applications
 
 2. **Touch vs Mouse Event Detection** (Secondary)
-   - Distinguishes between touch events (types 9-12) and mouse events
+   - Distinguishes between touch events (types 6-7, 9-12) and mouse events
+   - Detects touchscreen device types via Clutter.InputDeviceType
    - Prevents keyboard from opening when using mouse/keyboard
    - Three modes: Never / Touch Only / Always
 
@@ -31,7 +32,7 @@ This extension is based on the detection logic from [gjs-osk](https://github.com
 
 This extension is particularly useful for:
 
-- **Electron applications**: VSCode, Slack, Discord, Microsoft Teams, etc.
+- **Electron applications**: VSCode, Slack, Discord, Microsoft Teams
 - **Qt applications**: Non-GTK Linux apps
 - **Web browsers**: Firefox, Chromium, Chrome (form fields)
 - **Flatpak applications**: Sandboxed apps with input isolation
@@ -50,23 +51,19 @@ glib-compile-schemas schemas/
 
 # Copy to GNOME extensions directory
 mkdir -p ~/.local/share/gnome-shell/extensions/
-cp -r . ~/.local/share/gnome-shell/extensions/gnome-osk-automatic-open@gnome-shell-extensions.gcampax.github.com/
+cp -r . ~/.local/share/gnome-shell/extensions/gnome-osk-automatic-open@alexislaurier.fr/
 
 # Restart GNOME Shell (Wayland: logout/login, X11: Alt+F2, 'r')
 # Then enable the extension
-gnome-extensions enable gnome-osk-automatic-open@gnome-shell-extensions.gcampax.github.com
+gnome-extensions enable gnome-osk-automatic-open@alexislaurier.fr
 ```
-
-### Via Extensions.gnome.org
-
-(Coming soon)
 
 ## 🔧 Configuration
 
 Open the extension preferences:
 
 ```bash
-gnome-extensions prefs gnome-osk-automatic-open@gnome-shell-extensions.gcampax.github.com
+gnome-extensions prefs gnome-osk-automatic-open@alexislaurier.fr
 ```
 
 ### Settings
@@ -77,7 +74,7 @@ gnome-extensions prefs gnome-osk-automatic-open@gnome-shell-extensions.gcampax.g
   - **Always**: Opens on any input event (mouse, touch, keyboard)
 
 - **Polling Interval**: How often to check for text field focus (100-1000ms)
-  - Default: 300ms (same as gjs-osk)
+  - Default: 300ms
   - Lower = more responsive but higher CPU usage
 
 - **Clutter.Text Detection**: Enable direct detection of native GNOME text widgets
@@ -120,25 +117,29 @@ journalctl -f -o cat /usr/bin/gnome-shell | grep "OSK Auto Open"
                  │
                  ▼
 ┌─────────────────────────────────────────┐
-│  Control Native OSK via GSettings        │
-│  org.gnome.desktop.a11y.applications    │
-│  screen-keyboard-enabled                │
+│  Control Native OSK                     │
+│  - Main.keyboard.open()                 │
+│  - Main.keyboard.close()                │
+│  - Raise keyboard to top layer          │
 └─────────────────────────────────────────┘
 ```
 
-### Key Differences from gjs-osk
+### Implementation Details
 
-| Aspect | gjs-osk | This Extension |
-|--------|---------|----------------|
-| Keyboard Widget | Custom implementation | Native GNOME OSK |
-| Control Method | Direct JavaScript API | GSettings schema |
-| State Management | Internal variable | GSettings property |
-| Use Case | Custom keyboard UI | System keyboard automation |
+The extension controls the keyboard using:
+- `Main.keyboard.open()` - Opens the keyboard
+- `Main.keyboard.close()` - Closes the keyboard
+- `Main.layoutManager.uiGroup.set_child_above_sibling()` - Ensures keyboard stays on top
+
+The keyboard is automatically raised to the top whenever:
+- It is opened
+- Any touch/button press event is received while keyboard is visible
+
+This ensures the keyboard is never hidden behind other windows, especially important for fullscreen applications.
 
 ## 🤝 Credits
 
-- Detection logic inspired by [gjs-osk](https://github.com/Vishram1123/gjs-osk) by [@Vishram1123](https://github.com/Vishram1123)
-- Based on the original concept from [gnome-osk-automatic-open](https://github.com/gcampax/gnome-osk-automatic-open)
+Detection logic inspired by [gjs-osk](https://github.com/Vishram1123/gjs-osk) by [@Vishram1123](https://github.com/Vishram1123)
 
 ## 📝 License
 
@@ -151,11 +152,3 @@ Report issues or contribute at: https://github.com/AlexisLaurier/gnome-osk-autom
 ## 📚 Technical Documentation
 
 For detailed analysis of the detection logic, see [DETECTION_ANALYSIS.md](DETECTION_ANALYSIS.md).
-
-## 🔮 Future Improvements
-
-- [ ] Add application whitelist/blacklist
-- [ ] Configurable keyboard position/size
-- [ ] Support for multiple monitors
-- [ ] Integration with GNOME Settings accessibility panel
-- [ ] Auto-detection of touchscreen availability
